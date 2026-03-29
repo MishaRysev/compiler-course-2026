@@ -94,13 +94,11 @@ public:
 
     Expr *init = VD->getInit()->IgnoreParenCasts();
     if (isAllocationExpr(init)) {
-      unsigned idx =
-          addAllocation(init, getKindForExpr(init), VD->getLocation());
+      unsigned idx = addAllocation(init, getKindForExpr(init));
       FunctionContext &ctx = m_contexts.back();
       auto it = ctx.varToAllocIdx.find(VD);
-      if (it != ctx.varToAllocIdx.end()) {
+      if (it != ctx.varToAllocIdx.end())
         ctx.varToAllocIdx.erase(it);
-      }
       ctx.varToAllocIdx[VD] = idx;
     }
     return true;
@@ -124,18 +122,15 @@ public:
     FunctionContext &ctx = m_contexts.back();
 
     if (isAllocationExpr(rhs)) {
-      unsigned idx =
-          addAllocation(rhs, getKindForExpr(rhs), lhsDRE->getLocation());
+      unsigned idx = addAllocation(rhs, getKindForExpr(rhs));
       auto it = ctx.varToAllocIdx.find(VD);
-      if (it != ctx.varToAllocIdx.end()) {
+      if (it != ctx.varToAllocIdx.end())
         ctx.varToAllocIdx.erase(it);
-      }
       ctx.varToAllocIdx[VD] = idx;
     } else {
       auto it = ctx.varToAllocIdx.find(VD);
-      if (it != ctx.varToAllocIdx.end()) {
+      if (it != ctx.varToAllocIdx.end())
         ctx.varToAllocIdx.erase(it);
-      }
     }
     return true;
   }
@@ -172,18 +167,14 @@ private:
     return ResourceKind::Memory;
   }
 
-  unsigned addAllocation(Expr *E, ResourceKind kind,
-                         SourceLocation loc = SourceLocation()) {
-    if (loc.isInvalid())
-      loc = E->getExprLoc();
-
+  unsigned addAllocation(Expr *E, ResourceKind kind) {
     FunctionContext &ctx = m_contexts.back();
     auto it = ctx.exprToIdx.find(E);
     if (it != ctx.exprToIdx.end())
       return it->second;
 
     unsigned idx = ctx.allocations.size();
-    ctx.allocations.push_back({E, loc, kind, false});
+    ctx.allocations.push_back({E, E->getExprLoc(), kind, false});
     ctx.exprToIdx[E] = idx;
     return idx;
   }
@@ -229,11 +220,10 @@ private:
           ctx.allocations[idx].freed = true;
           auto it2 = ctx.varToAllocIdx.begin();
           while (it2 != ctx.varToAllocIdx.end()) {
-            if (it2->second == idx) {
+            if (it2->second == idx)
               ctx.varToAllocIdx.erase(it2++);
-            } else {
+            else
               ++it2;
-            }
           }
         }
       }
