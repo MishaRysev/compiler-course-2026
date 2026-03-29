@@ -94,7 +94,8 @@ public:
 
     Expr *init = VD->getInit()->IgnoreParenCasts();
     if (isAllocationExpr(init)) {
-      unsigned idx = addAllocation(init, getKindForExpr(init), VD->getLocation());
+      unsigned idx =
+          addAllocation(init, getKindForExpr(init), VD->getLocation());
       FunctionContext &ctx = m_contexts.back();
       auto it = ctx.varToAllocIdx.find(VD);
       if (it != ctx.varToAllocIdx.end())
@@ -122,7 +123,8 @@ public:
     FunctionContext &ctx = m_contexts.back();
 
     if (isAllocationExpr(rhs)) {
-      unsigned idx = addAllocation(rhs, getKindForExpr(rhs), lhsDRE->getLocation());
+      unsigned idx =
+          addAllocation(rhs, getKindForExpr(rhs), lhsDRE->getLocation());
       auto it = ctx.varToAllocIdx.find(VD);
       if (it != ctx.varToAllocIdx.end())
         ctx.varToAllocIdx.erase(it);
