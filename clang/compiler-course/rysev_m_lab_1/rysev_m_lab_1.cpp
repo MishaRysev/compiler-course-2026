@@ -54,6 +54,7 @@ public:
 
   bool VisitCXXNewExpr(CXXNewExpr *NE) {
     if (!m_contexts.empty()) {
+      // Для "свободных" new (без присваивания переменной)
       addAllocation(NE, ResourceKind::Memory, NE->getExprLoc());
     }
     return true;
@@ -70,6 +71,7 @@ public:
     StringRef funcName = callee->getName();
 
     if (funcName == "malloc" || funcName == "calloc" || funcName == "realloc") {
+      // Для "свободных" вызовов (без присваивания)
       addAllocation(CE, ResourceKind::Memory, CE->getExprLoc());
     } else if (funcName == "fopen") {
       addAllocation(CE, ResourceKind::File, CE->getExprLoc());
@@ -94,8 +96,8 @@ public:
 
     Expr *init = VD->getInit()->IgnoreParenCasts();
     if (isAllocationExpr(init)) {
-      unsigned idx =
-          addAllocation(init, getKindForExpr(init), init->getExprLoc());
+      // ВАЖНО: предупреждение должно быть на строке переменной, а не вызова
+      unsigned idx = addAllocation(init, getKindForExpr(init), VD->getLocation());
       FunctionContext &ctx = m_contexts.back();
       auto it = ctx.varToAllocIdx.find(VD);
       if (it != ctx.varToAllocIdx.end())
@@ -123,7 +125,8 @@ public:
     FunctionContext &ctx = m_contexts.back();
 
     if (isAllocationExpr(rhs)) {
-      unsigned idx = addAllocation(rhs, getKindForExpr(rhs), rhs->getExprLoc());
+      // Предупреждение на строке переменной (левая часть)
+      unsigned idx = addAllocation(rhs, getKindForExpr(rhs), lhsDRE->getLocation());
       auto it = ctx.varToAllocIdx.find(VD);
       if (it != ctx.varToAllocIdx.end())
         ctx.varToAllocIdx.erase(it);
