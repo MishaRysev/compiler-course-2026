@@ -94,7 +94,7 @@ public:
 
     Expr *init = VD->getInit()->IgnoreParenCasts();
     if (isAllocationExpr(init)) {
-      unsigned idx = addAllocation(init, getKindForExpr(init));
+      unsigned idx = addAllocation(init, getKindForExpr(init), VD->getLocation());
       FunctionContext &ctx = m_contexts.back();
       auto it = ctx.varToAllocIdx.find(VD);
       if (it != ctx.varToAllocIdx.end()) {
@@ -123,7 +123,7 @@ public:
     FunctionContext &ctx = m_contexts.back();
 
     if (isAllocationExpr(rhs)) {
-      unsigned idx = addAllocation(rhs, getKindForExpr(rhs));
+      unsigned idx = addAllocation(rhs, getKindForExpr(rhs), lhsDRE->getLocation());
       auto it = ctx.varToAllocIdx.find(VD);
       if (it != ctx.varToAllocIdx.end()) {
         ctx.varToAllocIdx.erase(it);
@@ -170,14 +170,17 @@ private:
     return ResourceKind::Memory;
   }
 
-  unsigned addAllocation(Expr *E, ResourceKind kind) {
+  unsigned addAllocation(Expr *E, ResourceKind kind, SourceLocation loc = SourceLocation()) {
+    if (loc.isInvalid())
+      loc = E->getExprLoc();
+
     FunctionContext &ctx = m_contexts.back();
     auto it = ctx.exprToIdx.find(E);
     if (it != ctx.exprToIdx.end())
       return it->second;
 
     unsigned idx = ctx.allocations.size();
-    ctx.allocations.push_back({E, E->getExprLoc(), kind, false});
+    ctx.allocations.push_back({E, loc, kind, false});
     ctx.exprToIdx[E] = idx;
     return idx;
   }
