@@ -54,7 +54,6 @@ public:
 
   bool VisitCXXNewExpr(CXXNewExpr *NE) {
     if (!m_contexts.empty()) {
-      // Для "свободных" new (без присваивания переменной)
       addAllocation(NE, ResourceKind::Memory, NE->getExprLoc());
     }
     return true;
@@ -71,7 +70,6 @@ public:
     StringRef funcName = callee->getName();
 
     if (funcName == "malloc" || funcName == "calloc" || funcName == "realloc") {
-      // Для "свободных" вызовов (без присваивания)
       addAllocation(CE, ResourceKind::Memory, CE->getExprLoc());
     } else if (funcName == "fopen") {
       addAllocation(CE, ResourceKind::File, CE->getExprLoc());
@@ -96,7 +94,6 @@ public:
 
     Expr *init = VD->getInit()->IgnoreParenCasts();
     if (isAllocationExpr(init)) {
-      // ВАЖНО: предупреждение должно быть на строке переменной, а не вызова
       unsigned idx = addAllocation(init, getKindForExpr(init), VD->getLocation());
       FunctionContext &ctx = m_contexts.back();
       auto it = ctx.varToAllocIdx.find(VD);
@@ -125,7 +122,6 @@ public:
     FunctionContext &ctx = m_contexts.back();
 
     if (isAllocationExpr(rhs)) {
-      // Предупреждение на строке переменной (левая часть)
       unsigned idx = addAllocation(rhs, getKindForExpr(rhs), lhsDRE->getLocation());
       auto it = ctx.varToAllocIdx.find(VD);
       if (it != ctx.varToAllocIdx.end())
@@ -202,6 +198,17 @@ private:
     handleFreeLike(arg, ResourceKind::Memory);
   }
 
+  bool isMostRecentLiveAllocation(const FunctionContext &ctx, unsigned idx,
+                                  ResourceKind kind) const {
+    for (int i = static_cast<int>(ctx.allocations.size()) - 1; i >= 0; --i) {
+      const AllocationInfo &AI = ctx.allocations[i];
+      if (AI.kind != kind || AI.freed)
+        continue;
+      return static_cast<unsigned>(i) == idx;
+    }
+    return false;
+  }
+
   void handleFreeLike(Expr *arg, ResourceKind kind) {
     FunctionContext &ctx = m_contexts.back();
 
@@ -210,7 +217,8 @@ private:
         auto it = ctx.varToAllocIdx.find(VD);
         if (it != ctx.varToAllocIdx.end()) {
           unsigned idx = it->second;
-          if (ctx.allocations[idx].kind == kind) {
+          if (ctx.allocations[idx].kind == kind &&
+              isMostRecentLiveAllocation(ctx, idx, kind)) {
             ctx.allocations[idx].freed = true;
             ctx.varToAllocIdx.erase(it);
           }
