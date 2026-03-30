@@ -5,8 +5,6 @@
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendPluginRegistry.h"
-#include "llvm/Support/raw_ostream.h"
-#include <map>
 #include <vector>
 
 using namespace clang;
@@ -31,8 +29,7 @@ struct FunctionContext {
 class ResourceLeakVisitor final
     : public RecursiveASTVisitor<ResourceLeakVisitor> {
 public:
-  explicit ResourceLeakVisitor(ASTContext *context, DiagnosticsEngine &diags)
-      : m_diags(diags) {}
+  explicit ResourceLeakVisitor(DiagnosticsEngine &diags) : m_diags(diags) {}
 
   bool TraverseFunctionDecl(FunctionDecl *FD) {
     if (!FD || !FD->hasBody())
@@ -94,7 +91,8 @@ public:
 
     Expr *init = VD->getInit()->IgnoreParenCasts();
     if (isAllocationExpr(init)) {
-      unsigned idx = addAllocation(init, getKindForExpr(init), VD->getLocation());
+      unsigned idx =
+          addAllocation(init, getKindForExpr(init), VD->getLocation());
       FunctionContext &ctx = m_contexts.back();
       auto it = ctx.varToAllocIdx.find(VD);
       if (it != ctx.varToAllocIdx.end())
@@ -122,7 +120,8 @@ public:
     FunctionContext &ctx = m_contexts.back();
 
     if (isAllocationExpr(rhs)) {
-      unsigned idx = addAllocation(rhs, getKindForExpr(rhs), lhsDRE->getLocation());
+      unsigned idx =
+          addAllocation(rhs, getKindForExpr(rhs), lhsDRE->getLocation());
       auto it = ctx.varToAllocIdx.find(VD);
       if (it != ctx.varToAllocIdx.end())
         ctx.varToAllocIdx.erase(it);
@@ -182,19 +181,19 @@ private:
   void handleFreeCall(CallExpr *CE) {
     if (CE->getNumArgs() == 0)
       return;
-    Expr *arg = CE->getArg(0)->IgnoreParenCasts();
+    Expr *arg = CE->getArg(0)->IgnoreParenImpCasts();
     handleFreeLike(arg, ResourceKind::Memory);
   }
 
   void handleFcloseCall(CallExpr *CE) {
     if (CE->getNumArgs() == 0)
       return;
-    Expr *arg = CE->getArg(0)->IgnoreParenCasts();
+    Expr *arg = CE->getArg(0)->IgnoreParenImpCasts();
     handleFreeLike(arg, ResourceKind::File);
   }
 
   void handleDeleteExpr(CXXDeleteExpr *DE) {
-    Expr *arg = DE->getArgument()->IgnoreParenCasts();
+    Expr *arg = DE->getArgument()->IgnoreParenImpCasts();
     handleFreeLike(arg, ResourceKind::Memory);
   }
 
@@ -245,9 +244,8 @@ private:
 
 class ResourceLeakConsumer final : public ASTConsumer {
 public:
-  explicit ResourceLeakConsumer(ASTContext *context, DiagnosticsEngine &diags,
-                                unsigned warnID)
-      : m_visitor(context, diags) {
+  explicit ResourceLeakConsumer(DiagnosticsEngine &diags, unsigned warnID)
+      : m_visitor(diags) {
     m_visitor.setWarnID(warnID);
   }
 
@@ -263,8 +261,8 @@ class ResourceLeakAction final : public PluginASTAction {
 public:
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &ci,
                                                  llvm::StringRef) override {
-    return std::make_unique<ResourceLeakConsumer>(
-        &ci.getASTContext(), ci.getDiagnostics(), m_warnID);
+    return std::make_unique<ResourceLeakConsumer>(ci.getDiagnostics(),
+                                                  m_warnID);
   }
 
   bool ParseArgs(const CompilerInstance &ci,
