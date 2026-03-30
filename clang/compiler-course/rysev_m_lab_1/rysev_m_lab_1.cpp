@@ -24,6 +24,7 @@ struct FunctionContext {
   std::vector<AllocationInfo> allocations;
   llvm::DenseMap<const Expr *, unsigned> exprToIdx;
   llvm::DenseMap<const VarDecl *, unsigned> varToAllocIdx;
+  llvm::DenseMap<const Expr *, ResourceKind> freedExprKind;
 };
 
 class ResourceLeakVisitor final
@@ -169,11 +170,22 @@ private:
   unsigned addAllocation(Expr *E, ResourceKind kind, SourceLocation loc) {
     FunctionContext &ctx = m_contexts.back();
     auto it = ctx.exprToIdx.find(E);
-    if (it != ctx.exprToIdx.end())
+    if (it != ctx.exprToIdx.end()) {
+      auto fIt = ctx.freedExprKind.find(E);
+      if (fIt != ctx.freedExprKind.end() && fIt->second == kind) {
+        ctx.allocations[it->second].freed = true;
+        ctx.freedExprKind.erase(fIt);
+      }
       return it->second;
+    }
+
+    auto fIt = ctx.freedExprKind.find(E);
+    bool isFreed = fIt != ctx.freedExprKind.end() && fIt->second == kind;
+    if (isFreed)
+      ctx.freedExprKind.erase(fIt);
 
     unsigned idx = ctx.allocations.size();
-    ctx.allocations.push_back({E, loc, kind, false});
+    ctx.allocations.push_back({E, loc, kind, isFreed});
     ctx.exprToIdx[E] = idx;
     return idx;
   }
@@ -229,6 +241,7 @@ private:
         unsigned idx = it->second;
         if (ctx.allocations[idx].kind == kind) {
           ctx.allocations[idx].freed = true;
+          ctx.freedExprKind.erase(arg);
           auto it2 = ctx.varToAllocIdx.begin();
           while (it2 != ctx.varToAllocIdx.end()) {
             if (it2->second == idx)
@@ -237,6 +250,8 @@ private:
               ++it2;
           }
         }
+      } else {
+        ctx.freedExprKind[arg] = kind;
       }
     }
   }
