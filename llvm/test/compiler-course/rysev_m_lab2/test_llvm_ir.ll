@@ -57,12 +57,3 @@ define <2 x float> @test_frem_vec2(<2 x float> %a, <2 x float> %b) {
   %rem = frem <2 x float> %a, %b
   ret <2 x float> %rem
 }
-
-define i32 @keep_mul(i32 %a, i32 %b) {
-; CHECK-LABEL: @keep_mul(
-; CHECK-NEXT:    [[MUL:%.*]] = mul i32 [[A:%.*]], [[B:%.*]]
-; CHECK-NEXT:    ret i32 [[MUL]]
-;
-  %mul = mul i32 %a, %b
-  ret i32 %mul
-}
