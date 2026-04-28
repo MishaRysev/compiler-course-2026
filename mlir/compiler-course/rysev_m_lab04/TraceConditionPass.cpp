@@ -1,9 +1,9 @@
-#include "mlir/Pass/Pass.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/Support/TypeID.h"
 #include "mlir/Tools/Plugins/PassPlugin.h"
 #include "llvm/Support/Compiler.h"
@@ -45,7 +45,8 @@ void TraceConditionPass::declareTraceFunctions(ModuleOp module) {
   auto addFunc = [&](StringRef name) {
     if (!module.lookupSymbol<func::FuncOp>(name)) {
       auto funcType = FunctionType::get(ctx, TypeRange(), TypeRange());
-      auto func = builder.create<func::FuncOp>(module.getLoc(), name, funcType);
+      auto func =
+          builder.create<func::FuncOp>(module.getLoc(), name, funcType);
       func.setVisibility(mlir::SymbolTable::Visibility::Private);
     }
   };
