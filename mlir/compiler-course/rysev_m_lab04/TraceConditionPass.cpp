@@ -45,8 +45,7 @@ void TraceConditionPass::declareTraceFunctions(ModuleOp module) {
   auto addFunc = [&](StringRef name) {
     if (!module.lookupSymbol<func::FuncOp>(name)) {
       auto funcType = FunctionType::get(ctx, TypeRange(), TypeRange());
-      auto func =
-          builder.create<func::FuncOp>(module.getLoc(), name, funcType);
+      auto func = builder.create<func::FuncOp>(module.getLoc(), name, funcType);
       func.setVisibility(mlir::SymbolTable::Visibility::Private);
     }
   };
