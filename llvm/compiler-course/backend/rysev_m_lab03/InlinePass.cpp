@@ -1,37 +1,48 @@
 #include "X86.h"
 #include "X86InstrInfo.h"
-#include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Pass.h"
 #include <map>
 
 using namespace llvm;
 
+#define DEBUG_TYPE "example-x86-inline"
+
 namespace {
 
-class RysevInlining : public MachineFunctionPass {
+class RysevInlining : public ModulePass {
 public:
   static char ID;
-  RysevInlining() : MachineFunctionPass(ID) {}
+  RysevInlining() : ModulePass(ID) {}
 
-  bool runOnMachineFunction(MachineFunction &MF) override;
+  bool runOnModule(Module &M) override;
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.addRequired<MachineModuleInfoWrapperPass>();
-    MachineFunctionPass::getAnalysisUsage(AU);
+    ModulePass::getAnalysisUsage(AU);
+  }
+
+  StringRef getPassName() const override {
+    return "Rysev Inlining Pass (ModulePass)";
   }
 
 private:
   static const unsigned MAX_INSTR = 15;
   static const unsigned MAX_REC_DEPTH = 3;
 
-  std::map<const Function *, unsigned> recursionDepth;
+  using DepthMap = std::map<const Function *, unsigned>;
+  DepthMap recursionDepth;
 
   bool canBeInlined(const MachineFunction &MF) const;
-  bool performInlining(MachineFunction &caller, MachineBasicBlock &block,
-                       MachineInstr &callMI, unsigned curDepth);
+  bool tryInline(MachineFunction &caller, MachineBasicBlock &block,
+                 MachineInstr &callMI, DepthMap &depthMap);
 };
 
 char RysevInlining::ID = 0;
@@ -41,21 +52,19 @@ bool RysevInlining::canBeInlined(const MachineFunction &MF) const {
     return false;
 
   unsigned cnt = 0;
-  for (const MachineBasicBlock &BB : MF) {
-    for (const MachineInstr &MI : BB) {
-      if (!MI.isDebugInstr()) {
-        ++cnt;
-        if (cnt > MAX_INSTR)
-          return false;
-      }
-    }
-  }
+  for (const MachineBasicBlock &BB : MF)
+    for (const MachineInstr &MI : BB)
+      if (!MI.isDebugInstr() && ++cnt > MAX_INSTR)
+        return false;
   return true;
 }
 
-bool RysevInlining::performInlining(MachineFunction &caller,
-                                    MachineBasicBlock &block,
-                                    MachineInstr &callMI, unsigned curDepth) {
+bool RysevInlining::tryInline(MachineFunction &caller,
+                              MachineBasicBlock &block,
+                              MachineInstr &callMI,
+                              DepthMap &depthMap) {
+  if (callMI.getOpcode() != X86::CALL64pcrel32)
+    return false;
   if (callMI.getNumOperands() == 0)
     return false;
 
@@ -63,14 +72,11 @@ bool RysevInlining::performInlining(MachineFunction &caller,
   if (!op0.isGlobal())
     return false;
 
-  if (callMI.getOpcode() != X86::CALL64pcrel32)
-    return false;
-
   const Function *targetFn = dyn_cast<Function>(op0.getGlobal());
   if (!targetFn)
     return false;
 
-  if (recursionDepth[targetFn] >= MAX_REC_DEPTH)
+  if (depthMap[targetFn] >= MAX_REC_DEPTH)
     return false;
 
   bool isRecursive = (targetFn == &caller.getFunction());
@@ -88,7 +94,7 @@ bool RysevInlining::performInlining(MachineFunction &caller,
   if (!canBeInlined(*calleeMF))
     return false;
 
-  recursionDepth[targetFn]++;
+  depthMap[targetFn]++;
 
   MachineRegisterInfo &callerMRI = caller.getRegInfo();
   MachineBasicBlock &calleeEntry = calleeMF->front();
@@ -96,10 +102,9 @@ bool RysevInlining::performInlining(MachineFunction &caller,
   std::map<Register, Register> regMap;
   SmallVector<MachineInstr *, 16> instrsToClone;
 
-  for (MachineInstr &mi : calleeEntry) {
+  for (MachineInstr &mi : calleeEntry)
     if (!mi.isReturn())
       instrsToClone.push_back(&mi);
-  }
 
   for (MachineInstr *origMI : instrsToClone) {
     MachineInstr *clonedMI = caller.CloneMachineInstr(origMI);
@@ -127,29 +132,49 @@ bool RysevInlining::performInlining(MachineFunction &caller,
   callMI.eraseFromParent();
 
   if (!isRecursive)
-    recursionDepth[targetFn]--;
+    depthMap[targetFn]--;
 
   return true;
 }
 
-bool RysevInlining::runOnMachineFunction(MachineFunction &MF) {
+bool RysevInlining::runOnModule(Module &M) {
   bool changed = false;
-  bool iterChanged = true;
+  bool again;
 
-  while (iterChanged) {
-    iterChanged = false;
+  do {
+    again = false;
 
-    for (MachineBasicBlock &MBB : MF) {
-      for (auto it = MBB.begin(); it != MBB.end();) {
-        MachineInstr &mi = *it;
-        ++it;
-        if (performInlining(MF, MBB, mi, 0)) {
-          iterChanged = true;
-          changed = true;
+    auto &MMI = getAnalysis<MachineModuleInfoWrapperPass>().getMMI();
+
+    struct CallSite {
+      MachineFunction *MF;
+      MachineBasicBlock *MBB;
+      MachineInstr *MI;
+    };
+    SmallVector<CallSite, 64> calls;
+
+    for (Function &F : M) {
+      if (F.isDeclaration())
+        continue;
+      MachineFunction *MF = MMI.getMachineFunction(F);
+      if (!MF)
+        continue;
+      for (MachineBasicBlock &MBB : *MF) {
+        for (MachineInstr &MI : MBB) {
+          if (MI.getOpcode() == X86::CALL64pcrel32) {
+            calls.push_back({MF, &MBB, &MI});
+          }
         }
       }
     }
-  }
+
+    for (CallSite &cs : calls) {
+      if (tryInline(*cs.MF, *cs.MBB, *cs.MI, recursionDepth)) {
+        again = true;
+        changed = true;
+      }
+    }
+  } while (again);
 
   return changed;
 }
