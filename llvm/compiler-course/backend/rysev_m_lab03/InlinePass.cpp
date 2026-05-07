@@ -59,10 +59,8 @@ bool RysevInlining::canBeInlined(const MachineFunction &MF) const {
   return true;
 }
 
-bool RysevInlining::tryInline(MachineFunction &caller,
-                              MachineBasicBlock &block,
-                              MachineInstr &callMI,
-                              DepthMap &depthMap) {
+bool RysevInlining::tryInline(MachineFunction &caller, MachineBasicBlock &block,
+                              MachineInstr &callMI, DepthMap &depthMap) {
   if (callMI.getOpcode() != X86::CALL64pcrel32)
     return false;
   if (callMI.getNumOperands() == 0)
