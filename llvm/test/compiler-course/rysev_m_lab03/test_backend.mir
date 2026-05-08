@@ -91,7 +91,6 @@ body: |
     CALL64pcrel32 @small_func, implicit $edi, implicit-def $eax
     RET64 $eax
 
-#--- Цепочка вызовов (root -> middle -> leaf) – не требуем инлайна, только RET64
 # CHECK-LABEL: name: root
 # CHECK: RET64
 

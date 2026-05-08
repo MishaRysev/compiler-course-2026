@@ -37,12 +37,11 @@ private:
   static const unsigned MAX_INSTR = 15;
   static const unsigned MAX_REC_DEPTH = 3;
 
-  using DepthMap = std::map<const Function *, unsigned>;
-  DepthMap recursionDepth;
+  std::map<const Function *, unsigned> recursionDepth;
 
   bool canBeInlined(const MachineFunction &MF) const;
   bool tryInline(MachineFunction &caller, MachineBasicBlock &block,
-                 MachineInstr &callMI, DepthMap &depthMap);
+                 MachineInstr &callMI);
 };
 
 char RysevInlining::ID = 0;
@@ -60,7 +59,7 @@ bool RysevInlining::canBeInlined(const MachineFunction &MF) const {
 }
 
 bool RysevInlining::tryInline(MachineFunction &caller, MachineBasicBlock &block,
-                              MachineInstr &callMI, DepthMap &depthMap) {
+                              MachineInstr &callMI) {
   if (callMI.getOpcode() != X86::CALL64pcrel32)
     return false;
   if (callMI.getNumOperands() == 0)
@@ -74,7 +73,7 @@ bool RysevInlining::tryInline(MachineFunction &caller, MachineBasicBlock &block,
   if (!targetFn)
     return false;
 
-  if (depthMap[targetFn] >= MAX_REC_DEPTH)
+  if (recursionDepth[targetFn] >= MAX_REC_DEPTH)
     return false;
 
   bool isRecursive = (targetFn == &caller.getFunction());
@@ -92,7 +91,7 @@ bool RysevInlining::tryInline(MachineFunction &caller, MachineBasicBlock &block,
   if (!canBeInlined(*calleeMF))
     return false;
 
-  depthMap[targetFn]++;
+  recursionDepth[targetFn]++;
 
   MachineRegisterInfo &callerMRI = caller.getRegInfo();
   MachineBasicBlock &calleeEntry = calleeMF->front();
@@ -130,7 +129,7 @@ bool RysevInlining::tryInline(MachineFunction &caller, MachineBasicBlock &block,
   callMI.eraseFromParent();
 
   if (!isRecursive)
-    depthMap[targetFn]--;
+    recursionDepth[targetFn]--;
 
   return true;
 }
@@ -167,7 +166,7 @@ bool RysevInlining::runOnModule(Module &M) {
     }
 
     for (CallSite &cs : calls) {
-      if (tryInline(*cs.MF, *cs.MBB, *cs.MI, recursionDepth)) {
+      if (tryInline(*cs.MF, *cs.MBB, *cs.MI)) {
         again = true;
         changed = true;
       }
