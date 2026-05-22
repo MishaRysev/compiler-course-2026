@@ -54,6 +54,7 @@ body: |
 # CHECK: ADD32ri
 # CHECK: ADD32ri
 # CHECK: ADD32ri
+# CHECK-NOT: ADD32ri
 # CHECK: CALL64pcrel32 @recurse
 # CHECK: RET64
 
@@ -124,11 +125,11 @@ body: |
 
 # CHECK-LABEL: name: foo3
 # CHECK-NOT: CALL64pcrel32
-# CHECK: %{{[0-9]+}}:gr32 = ADD32ri
-# CHECK: %{{[0-9]+}}:gr32 = IMUL32rr
-# CHECK: %{{[0-9]+}}:gr32 = SUB32rr
-# CHECK: %{{[0-9]+}}:gr32 = IMUL32rr
-# CHECK: RET64
+# CHECK-NEXT: %{{[0-9]+}}:gr32 = ADD32ri
+# CHECK-NEXT: %{{[0-9]+}}:gr32 = IMUL32rr
+# CHECK-NEXT: %{{[0-9]+}}:gr32 = SUB32rr
+# CHECK-NEXT: %3:gr32 = IMUL32rr %1, %2, implicit-def $eflags
+# CHECK-NEXT: RET64
 
 ---
 name: foo1
