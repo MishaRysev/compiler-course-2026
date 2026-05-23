@@ -1,0 +1,174 @@
+# RUN: llc -mtriple=x86_64-unknown-linux-gnu \
+# RUN:   --load=%llvmshlibdir/rysev_m_lab03_BACKEND%shlibext \
+# RUN:   -run-pass=example-x86-inline %s -o - | FileCheck %s
+
+--- |
+  define i32 @big_func(i32) { ret i32 0 }
+  define i32 @big_caller(i32) { ret i32 0 }
+  define void @recurse(i32) { ret void }
+  define i32 @small_func(i32) { ret i32 0 }
+  define i32 @small_caller(i32) { ret i32 0 }
+  define i32 @leaf(i32) { ret i32 0 }
+  define i32 @middle(i32) { ret i32 0 }
+  define i32 @root(i32) { ret i32 0 }
+  define i32 @foo1(i32) { ret i32 0 }
+  define i32 @foo2(i32) { ret i32 0 }
+  define i32 @foo3(i32) { ret i32 0 }
+
+# CHECK-LABEL: name: big_caller
+# CHECK: CALL64pcrel32 @big_func
+# CHECK: RET64
+
+---
+name: big_func
+tracksRegLiveness: true
+body: |
+  bb.0:
+    %0:gr32 = MOV32ri 1
+    %1:gr32 = MOV32ri 2
+    %2:gr32 = MOV32ri 3
+    %3:gr32 = MOV32ri 4
+    %4:gr32 = MOV32ri 5
+    %5:gr32 = MOV32ri 6
+    %6:gr32 = MOV32ri 7
+    %7:gr32 = MOV32ri 8
+    %8:gr32 = MOV32ri 9
+    %9:gr32 = MOV32ri 10
+    %10:gr32 = MOV32ri 11
+    %11:gr32 = MOV32ri 12
+    %12:gr32 = MOV32ri 13
+    %13:gr32 = MOV32ri 14
+    %14:gr32 = MOV32ri 15
+    %15:gr32 = MOV32ri 16
+    RET64
+
+---
+name: big_caller
+tracksRegLiveness: true
+body: |
+  bb.0:
+    CALL64pcrel32 @big_func, implicit-def $eax
+    RET64
+
+# CHECK-LABEL: name: recurse
+# CHECK: ADD32ri
+# CHECK: ADD32ri
+# CHECK: ADD32ri
+# CHECK: CALL64pcrel32 @recurse
+# CHECK: RET64
+
+---
+name: recurse
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $edi
+    %0:gr32 = ADD32ri $edi, 1, implicit-def $eflags
+    $edi = COPY %0
+    CALL64pcrel32 @recurse
+    RET64
+
+# CHECK-LABEL: name: small_caller
+# CHECK: ADD32ri
+# CHECK: RET64
+
+---
+name: small_func
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $edi
+    %0:gr32 = ADD32ri $edi, 7, implicit-def $eflags
+    $eax = COPY %0
+    RET64
+
+---
+name: small_caller
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $edi
+    CALL64pcrel32 @small_func, implicit $edi, implicit-def $eax
+    RET64 $eax
+
+# CHECK-LABEL: name: root
+# CHECK: RET64
+
+---
+name: leaf
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $edi
+    %0:gr32 = ADD32ri $edi, 10, implicit-def $eflags
+    $eax = COPY %0
+    RET64
+
+---
+name: middle
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $edi
+    CALL64pcrel32 @leaf, implicit $edi, implicit-def $eax
+    RET64 $eax
+
+---
+name: root
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $edi
+    CALL64pcrel32 @middle, implicit $edi, implicit-def $eax
+    RET64 $eax
+
+# CHECK-LABEL: name: foo3
+# CHECK-NOT: CALL64pcrel32
+# CHECK: %{{[0-9]+}}:gr32 = ADD32ri
+# CHECK-NEXT: %{{[0-9]+}}:gr32 = IMUL32rr
+# CHECK-NEXT: %{{[0-9]+}}:gr32 = SUB32rr
+# CHECK-NEXT: %3:gr32 = IMUL32rr %1, %2, implicit-def $eflags
+# CHECK-NEXT: RET64
+
+---
+name: foo1
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $edi
+    %0:gr32 = COPY $edi
+    %1:gr32 = IMUL32rr %0, %0, implicit-def $eflags
+    $eax = COPY %1
+    RET64
+
+---
+name: foo2
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $edi
+    %0:gr32 = COPY $edi
+    %1:gr32 = ADD32ri %0, 10, implicit-def $eflags
+    $edi = COPY %0
+    CALL64pcrel32 @foo1, implicit $edi, implicit-def $eax
+    %2:gr32 = COPY $eax
+    %3:gr32 = SUB32rr %1, %2, implicit-def $eflags
+    $eax = COPY %3
+    RET64
+
+---
+name: foo3
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $edi
+    %0:gr32 = COPY $edi
+    $edi = COPY %0
+    CALL64pcrel32 @foo2, implicit $edi, implicit-def $eax
+    %1:gr32 = COPY $eax
+    $edi = COPY %1
+    CALL64pcrel32 @foo1, implicit $edi, implicit-def $eax
+    %2:gr32 = COPY $eax
+    %3:gr32 = IMUL32rr %1, %2, implicit-def $eflags
+    $eax = COPY %3
+    RET64
